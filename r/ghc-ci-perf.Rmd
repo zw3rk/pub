@@ -1,0 +1,59 @@
+---
+title: "GHC CI Performance Analysis - 2021-03-11"
+output: html_notebook
+---
+Libraries we need
+```{r}
+library("httr")
+library("jsonlite")
+library("ggplot2")
+library("plyr")
+library("crul")
+```
+
+Let's first get some pipelines... this is a bit annoying because it won't return durations (which we are interested in); so we'll have to do lots of requests.
+
+```{r}
+baseurl <- "https://gitlab.haskell.org/api/v4/projects/1/pipelines?status=success&per_page=100"
+pages <- list()
+for(i in 1:10) {
+  data <- fromJSON(paste0(baseurl, "&page", i))
+  pages[[i+1]] <- data
+}
+successful_pipelines <- rbind_pages(pages)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+(cc <- Async$new(
+  urls <- lapply(successful_pipelines$id, function(id) paste0("https://gitlab.haskell.org/api/v4/projects/1/pipelines/", id))
+))
+(res <- cc$get())
+pipeline_durations <- rbind_pages(lapply(res, function(z) fromJSON(paste0("[",z$parse("UTF-8"),"]"))))
+```
+
+This will give us a density plot for the duration
+```{r}
+pipeline_durations$hours <- pipeline_durations$duration/60/60
+ggplot(pipeline_durations, aes(hours)) + geom_density()
+```
+
+
+Let's fetch the last 2000 successful builds
+
+```{r}
+baseurl <- "https://gitlab.haskell.org/api/v4/projects/1/jobs?private_token=i7mPayfW3kh5vzz7EMVB&scope=success&per_page=100"
+pages <- list()
+for(i in 1:20) {
+  data <- fromJSON(paste0(baseurl, "&page=", i))
+  pages[[i+1]] <- data
+}
+successful_runs <- rbind_pages(pages)
+```
+And add a visualization in minutes
+```{r,fig.width=10,fig.height=11}
+successful_runs$minutes <- successful_runs$duration / 60 
+ggplot(successful_runs,aes(minutes, name)) +geom_boxplot(aes(colour=runner$description))
+```
+
+
